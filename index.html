@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NodeJS Secure Storage</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 2rem auto; padding: 1rem; background: #eef2f5; }
+        .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h2 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
+        
+        .section { margin-bottom: 2rem; }
+        label { font-weight: bold; display: block; margin-top: 10px; }
+        
+        input[type="file"], input[type="password"] { width: 100%; padding: 10px; margin-top: 5px; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box;}
+        
+        button { width: 100%; background: #3498db; color: white; border: none; padding: 12px; margin-top: 15px; border-radius: 5px; cursor: pointer; font-size: 16px; font-weight: bold; transition: background 0.3s; }
+        button:hover { background: #2980b9; }
+        
+        .file-item { background: #f8f9fa; border-left: 5px solid #2ecc71; padding: 15px; margin: 10px 0; display: flex; justify-content: space-between; align-items: center; border-radius: 4px; }
+        .file-item button { width: auto; margin: 0; padding: 8px 15px; font-size: 14px; background: #2ecc71; }
+        
+        #status { margin-top: 10px; font-weight: bold; color: #27ae60; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Secure Multimedia Storage</h2>
+    
+    <div class="section">
+        <h3>1. Encrypt & Upload</h3>
+        <label>Select File:</label>
+        <input type="file" id="fileInput">
+        
+        <label>Set Secret Password:</label>
+        <input type="password" id="password" placeholder="e.g., mySecretKey123">
+        
+        <button onclick="uploadFile()">Encrypt & Upload to Node Server</button>
+        <p id="status"></p>
+    </div>
+
+    <div class="section">
+        <h3>2. Cloud Files (Encrypted)</h3>
+        <div id="fileList">Connecting to server...</div>
+    </div>
+</div>
+
+<script>
+    const SERVER_URL = "http://localhost:3000";
+
+    // --- CRYPTO HELPER (AES-GCM) ---
+    async function getCryptoKey(password, salt) {
+        const enc = new TextEncoder();
+        const keyMaterial = await window.crypto.subtle.importKey(
+            "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
+        );
+        return window.crypto.subtle.deriveKey(
+            { name: "PBKDF2", salt: salt, iterations: 100000, hash: "SHA-256" },
+            keyMaterial, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]
+        );
+    }
+
+    // --- UPLOAD LOGIC ---
+    async function uploadFile() {
+        const fileInput = document.getElementById('fileInput');
+        const password = document.getElementById('password').value;
+        const status = document.getElementById('status');
+
+        if (!fileInput.files[0] || !password) return alert("Please select a file and enter a password.");
+
+        status.innerText = "Encrypting locally...";
+        
+        try {
+            const file = fileInput.files[0];
+            
+            // 1. Generate Salt & IV
+            const salt = window.crypto.getRandomValues(new Uint8Array(16));
+            const iv = window.crypto.getRandomValues(new Uint8Array(12));
+
+            // 2. Encrypt
+            const key = await getCryptoKey(password, salt);
+            const fileBuffer = await file.arrayBuffer();
+            const encryptedData = await window.crypto.subtle.encrypt(
+                { name: "AES-GCM", iv: iv }, key, fileBuffer
+            );
+
+            // 3. Prepare Upload
+            const encryptedBlob = new Blob([encryptedData]);
+            const formData = new FormData();
+            formData.append("file", encryptedBlob, file.name + ".enc"); // Append .enc
+            formData.append("iv", JSON.stringify(Array.from(iv)));
+            formData.append("salt", JSON.stringify(Array.from(salt)));
+
+            // 4. Send to Node Server
+            status.innerText = "Uploading...";
+            const res = await fetch(`${SERVER_URL}/upload`, {
+                method: "POST",
+                body: formData
+            });
+
+            const result = await res.json();
+            status.innerText = result.message || "Done!";
+            loadFiles(); // Refresh list
+
+        } catch (err) {
+            console.error(err);
+            status.innerText = "Error: " + err.message;
+        }
+    }
+
+    // --- DOWNLOAD LOGIC ---
+    async function loadFiles() {
+        const listDiv = document.getElementById('fileList');
+        try {
+            const res = await fetch(`${SERVER_URL}/files`);
+            const files = await res.json();
+            
+            listDiv.innerHTML = "";
+            files.forEach(file => {
+                const div = document.createElement('div');
+                div.className = "file-item";
+                div.innerHTML = `
+                    <span>${file.originalName}</span>
+                    <button onclick='decryptFile(${JSON.stringify(file)})'>Decrypt</button>
+                `;
+                listDiv.appendChild(div);
+            });
+            if(files.length === 0) listDiv.innerText = "No files found.";
+        } catch (err) {
+            listDiv.innerText = "Could not connect to Node server.";
+        }
+    }
+
+    async function decryptFile(fileMeta) {
+        const password = prompt(`Enter password for "${fileMeta.originalName}":`);
+        if (!password) return;
+
+        try {
+            // 1. Download Encrypted Blob
+            const res = await fetch(`${SERVER_URL}/download/${fileMeta.fileName}`);
+            const encryptedBuffer = await res.arrayBuffer();
+
+            // 2. Derive Key
+            const iv = new Uint8Array(JSON.parse(fileMeta.iv));
+            const salt = new Uint8Array(JSON.parse(fileMeta.salt));
+            const key = await getCryptoKey(password, salt);
+
+            // 3. Decrypt
+            const decryptedData = await window.crypto.subtle.decrypt(
+                { name: "AES-GCM", iv: iv }, key, encryptedBuffer
+            );
+
+            // 4. Save to User's Computer
+            const blob = new Blob([decryptedData]);
+            const link = document.createElement('a');
+            link.href = window.URL.createObjectURL(blob);
+            link.download = fileMeta.originalName.replace(".enc", "");
+            link.click();
+        } catch (err) {
+            alert("Decryption Failed! Incorrect Password.");
+        }
+    }
+
+    loadFiles();
+</script>
+
+</body>
+</html>

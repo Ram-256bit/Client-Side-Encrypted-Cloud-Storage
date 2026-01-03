@@ -1,1 +1,9 @@
-nodemodules/
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+
+# Local Storage (Don't commit your uploaded files!)
+uploads/
+db.json
