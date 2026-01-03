@@ -3,7 +3,10 @@
 ### 0. Prerequisite
 Download and install **Node.js** from nodejs.org (https://nodejs.org/dist/v24.12.0/node-v24.12.0-x64.msi).
 
-### 1. Setup & Run Server
+### 1. Download the code
+Download the code (https://github.com/Ram-256bit/Client-Side-Encrypted-File-Storage/archive/refs/heads/main.zip)
+
+### 2. Setup & Run Server
 Open your terminal in the project folder:
 
 ```bash
@@ -14,11 +17,11 @@ npm install
 node server.js
 ```
 
-### 2. Open the App
+### 3. Open the App
 
 Double-click `index.html` to open it in your browser.
 
-### 3. How to Use
+### 4. How to Use
 
 * **To Upload:** Select a file, type a **Secret Password**, and click "Encrypt & Upload".
 * **To Download:** Click the **Decrypt** button next to a file and enter the *original* password.
