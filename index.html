@@ -127,7 +127,7 @@
 
     // --- ACTIONS ---
     function copyLink(id) {
-        const link = `${window.location.origin}/?id=${id}`;
+        const link = `${SERVER_URL}/?id=${id}`;
         navigator.clipboard.writeText(link);
         alert("Magic Link Copied: " + link);
     }
